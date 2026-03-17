@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fireworks Generator</title>
+    <style>
+        /* Basic styles to make the canvas fullscreen and create a night-sky effect */
+        body {
+            margin: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        #controls label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        #controls input[type="range"] {
+            width: 150px;
+        }
+
+        #controls button {
+            background-color: #4A90E2;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #controls button:hover {
+            background-color: #357ABD;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <canvas id="fireworksCanvas"></canvas>
+    <div id="controls">
+        <label>
+            <span>Auto Launch</span>
+            <input type="checkbox" id="autoLaunch" checked>
+        </label>
+        <label>
+            <span>Particle Count:</span>
+            <input type="range" id="particleCount" min="50" max="500" value="150" step="10">
+        </label>
+        <button id="resetButton">Reset</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('fireworksCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Control elements
+        const autoLaunchCheckbox = document.getElementById('autoLaunch');
+        const particleCountSlider = document.getElementById('particleCount');
+        const resetButton = document.getElementById('resetButton');
+
+        let fireworks = [];
+        let particles = [];
+        let hue = 120; // Start with green
+        let autoLaunch = true;
+        let launchInterval = 800; // ms
+        let lastLaunchTime = 0;
+
+        // Set canvas to full screen
+        function setCanvasSize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        setCanvasSize();
+
+        // Particle class for the firework sparks
+        class Particle {
+            constructor(x, y, hue, firework, isExplosion = true) {
+                this.x = x;
+                this.y = y;
+                this.hue = hue;
+                this.firework = firework; // Is this a rocket or an explosion particle?
+                this.isExplosion = isExplosion;
+                this.angle = Math.random() * Math.PI * 2;
+                this.speed = Math.random() * (this.isExplosion ? 10 : 3) + 1;
+                this.friction = 0.97;
+                this.gravity = this.isExplosion ? 0.12 : 0;
+                this.alpha = 1;
+                this.decay = Math.random() * 0.03 + 0.015;
+                this.coordinates = [];
+                this.coordinateCount = 5;
+                while (this.coordinateCount--) {
+                    this.coordinates.push([this.x, this.y]);
+                }
+            }
+
+            update() {
+                this.coordinates.pop();
+                this.coordinates.unshift([this.x, this.y]);
+
+                this.speed *= this.friction;
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed + this.gravity;
+                this.alpha -= this.decay;
+
+                return this.alpha > this.decay;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.coordinates[this.coordinates.length - 1][0], this.coordinates[this.coordinates.length - 1][1]);
+                ctx.lineTo(this.x, this.y);
+                ctx.strokeStyle = `hsla(${this.hue}, 100%, 50%, ${this.alpha})`;
+                ctx.stroke();
+            }
+        }
+
+        // Firework class for the initial rocket
+        class Firework {
+            constructor(startX, startY, endX, endY) {
+                this.x = startX;
+                this.y = startY;
+                this.startX = startX;
+                this.startY = startY;
+                this.endX = endX;
+                this.endY = endY;
+                this.distanceToEnd = this.calculateDistance(startX, startY, endX, endY);
+                this.distanceTraveled = 0;
+                this.angle = Math.atan2(endY - startY, endX - startX);
+                this.speed = 2;
+                this.acceleration = 1.05;
+                this.brightness = Math.random() * 20 + 50;
+                this.targetRadius = 1;
+                this.hue = hue;
+                this.coordinates = [];
+                this.coordinateCount = 3;
+                while (this.coordinateCount--) {
+                    this.coordinates.push([this.x, this.y]);
+                }
+            }
+
+            calculateDistance(p1x, p1y, p2x, p2y) {
+                const xDistance = p1x - p2x;
+                const yDistance = p1y - p2y;
+                return Math.sqrt(Math.pow(xDistance, 2) + Math.pow(yDistance, 2));
+            }
+
+            update(index) {
+                this.coordinates.pop();
+                this.coordinates.unshift([this.x, this.y]);
+
+                this.speed *= this.acceleration;
+                const vx = Math.cos(this.angle) * this.speed;
+                const vy = Math.sin(this.angle) * this.speed;
+
+                this.distanceTraveled = this.calculateDistance(this.startX, this.startY, this.x + vx, this.y + vy);
+
+                if (this.distanceTraveled >= this.distanceToEnd) {
+                    fireworks.splice(index, 1);
+                    createExplosion(this.endX, this.endY, this.hue);
+                } else {
+                    this.x += vx;
+                    this.y += vy;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.moveTo(this.coordinates[this.coordinates.length - 1][0], this.coordinates[this.coordinates.length - 1][1]);
+                ctx.lineTo(this.x, this.y);
+                ctx.strokeStyle = `hsl(${this.hue}, 100%, ${this.brightness}%)`;
+                ctx.stroke();
+            }
+        }
+
+        function createExplosion(x, y, hue) {
+            const count = parseInt(particleCountSlider.value);
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(x, y, hue, false));
+            }
+        }
+
+        function launchFirework(targetX = Math.random() * canvas.width, targetY = Math.random() * (canvas.height / 2)) {
+            const startX = canvas.width / 2;
+            const startY = canvas.height;
+            fireworks.push(new Firework(startX, startY, targetX, targetY));
+        }
+
+        // Main animation loop
+        function animate(timestamp) {
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.globalCompositeOperation = 'lighter';
+
+            // Update and draw fireworks
+            for (let i = fireworks.length - 1; i >= 0; i--) {
+                fireworks[i].draw();
+                fireworks[i].update(i);
+            }
+
+            // Update and draw particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                if (!particles[i].update()) {
+                    particles.splice(i, 1);
+                } else {
+                    particles[i].draw();
+                }
+            }
+            
+            // Auto launch logic
+            if (autoLaunch && (timestamp - lastLaunchTime > launchInterval)) {
+                launchFirework();
+                lastLaunchTime = timestamp;
+                hue += 20; // Cycle through colors
+                if (hue > 360) hue = 0;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Event listeners
+        window.addEventListener('resize', setCanvasSize);
+
+        canvas.addEventListener('click', (e) => {
+            hue += 20;
+            if (hue > 360) hue = 0;
+            launchFirework(e.clientX, e.clientY);
+        });
+
+        autoLaunchCheckbox.addEventListener('change', (e) => {
+            autoLaunch = e.target.checked;
+        });
+        
+        resetButton.addEventListener('click', () => {
+            fireworks = [];
+            particles = [];
+            ctx.fillStyle = 'rgb(0, 0, 0)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        });
+
+        // Start the animation
+        animate(0);
+    </script>
+</body>
+</html>
+
+
